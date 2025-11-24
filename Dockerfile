@@ -1,13 +1,13 @@
 # RunPod Serverless Dockerfile for YOLO Nutrition OCR
 FROM pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime
 
-# 設定非互動模式，避免安裝過程卡住等待輸入
+# 設定非互動模式
 ARG DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Taipei
 
 WORKDIR /app
 
-# 安裝系統依賴（非互動模式）
+# 安裝系統依賴
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     tzdata \
@@ -20,10 +20,12 @@ RUN apt-get update && \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# 複製 requirements 並安裝
-COPY requirements.txt .
+# 安裝 Python 依賴
 RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir numpy && \
+    pip install --no-cache-dir opencv-python-headless && \
+    pip install --no-cache-dir ultralytics && \
+    pip install --no-cache-dir pytesseract && \
     pip install --no-cache-dir runpod
 
 # 複製應用程式檔案
