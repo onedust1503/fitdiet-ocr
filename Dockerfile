@@ -1,5 +1,5 @@
 # RunPod Serverless Dockerfile for YOLO Nutrition OCR
-FROM runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel-ubuntu22.04
+FROM pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime
 
 WORKDIR /app
 
@@ -14,15 +14,11 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# 先升級 pip
-RUN pip install --upgrade pip
-
-# 安裝 Python 依賴（分開安裝避免衝突）
-RUN pip install --no-cache-dir flask flask-cors Pillow
-RUN pip install --no-cache-dir ultralytics
-RUN pip install --no-cache-dir opencv-python-headless
-RUN pip install --no-cache-dir pytesseract
-RUN pip install --no-cache-dir runpod
+# 複製 requirements 並安裝
+COPY requirements.txt .
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir runpod
 
 # 複製應用程式檔案
 COPY . .
