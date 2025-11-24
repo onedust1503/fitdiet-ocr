@@ -11,11 +11,17 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr-eng \
     libgl1-mesa-glx \
     libglib2.0-0 \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
-# 複製 requirements 並安裝 Python 依賴
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# 先升級 pip
+RUN pip install --upgrade pip
+
+# 安裝 Python 依賴（分開安裝避免衝突）
+RUN pip install --no-cache-dir flask flask-cors Pillow
+RUN pip install --no-cache-dir ultralytics
+RUN pip install --no-cache-dir opencv-python-headless
+RUN pip install --no-cache-dir pytesseract
 RUN pip install --no-cache-dir runpod
 
 # 複製應用程式檔案
