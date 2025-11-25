@@ -43,8 +43,8 @@ def extract_number(text):
             return None
     return None
 
-def ocr_with_single_strategy(image, bbox):
-    """優化後的 OCR：只使用單一策略以提升速度"""
+def ocr_with_multiple_strategies(image, bbox):
+    """優化後的 OCR：嘗試多種策略找最佳結果"""
     try:
         x1, y1, x2, y2 = map(int, bbox)
         
@@ -66,23 +66,53 @@ def ocr_with_single_strategy(image, bbox):
         else:
             gray = roi
         
-        # 放大圖片有助於辨識小字
-        scale = 2
+        # 放大圖片 - 提高到 3 倍
+        scale = 3
         gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
         
-        # 二值化 - 只用 OTSU，最穩定
-        _, processed = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        # 嘗試 3 種策略
+        strategies = []
         
-        # 只執行一次 OCR
-        text = pytesseract.image_to_string(
-            processed,
-            lang='chi_tra+eng',
-            config='--psm 7'
-        ).strip()
+        # 策略 1: OTSU 二值化
+        _, binary1 = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        strategies.append(('otsu', binary1))
         
-        value = extract_number(text)
-        if value is not None:
-            return text, value
+        # 策略 2: 反轉 OTSU（處理白底黑字）
+        _, binary2 = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        strategies.append(('otsu_inv', binary2))
+        
+        # 策略 3: 自適應閾值
+        adaptive = cv2.adaptiveThreshold(
+            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+            cv2.THRESH_BINARY, 11, 2
+        )
+        strategies.append(('adaptive', adaptive))
+        
+        # 對每種策略執行 OCR
+        results = []
+        for name, processed in strategies:
+            # 去噪
+            denoised = cv2.medianBlur(processed, 3)
+            
+            # 執行 OCR
+            text = pytesseract.image_to_string(
+                denoised,
+                lang='eng',  # 只用英文，數字辨識更準確
+                config='--psm 7 --oem 3 -c tessedit_char_whitelist=0123456789.'
+            ).strip()
+            
+            value = extract_number(text)
+            if value is not None and value > 0:
+                # 計算信心分數（數字長度越長，越可能正確）
+                confidence = len(text.replace('.', '').replace(',', ''))
+                results.append((value, confidence, text, name))
+        
+        if results:
+            # 選擇信心分數最高的結果
+            results.sort(key=lambda x: x[1], reverse=True)
+            best_value, best_conf, best_text, best_strategy = results[0]
+            print(f"  OCR Strategy: {best_strategy}, Text: '{best_text}', Value: {best_value}")
+            return best_text, best_value
                 
     except Exception as e:
         print(f"OCR Error: {e}")
@@ -145,8 +175,8 @@ def process_image(image_path):
                 
                 class_name = class_names.get(cls_id, f'unknown_{cls_id}')
                 
-                # OCR - 只執行一次
-                raw_text, value = ocr_with_single_strategy(image, bbox)
+                # OCR - 嘗試多種策略
+                raw_text, value = ocr_with_multiple_strategies(image, bbox)
                 
                 if value is not None:
                     items.append({
