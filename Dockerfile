@@ -20,9 +20,9 @@ RUN apt-get update && \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# 安裝 Python 依賴
+# 安裝 Python 依賴 - 重要：numpy 必須先裝
 RUN pip install --upgrade pip && \
-    pip install --no-cache-dir numpy && \
+    pip install --no-cache-dir numpy==1.24.3 && \
     pip install --no-cache-dir opencv-python-headless && \
     pip install --no-cache-dir ultralytics && \
     pip install --no-cache-dir pytesseract && \
