@@ -84,10 +84,17 @@ def extract_number(text):
     except:
         return None
 
-def ocr_single_fast_strategy(image, bbox):
+def ocr_single_fast_strategy(image, bbox, timeout=5):
     """快速 OCR：單一策略，加入智能小數點修正"""
+    import time
+    ocr_start = time.time()
+    
     try:
         x1, y1, x2, y2 = map(int, bbox)
+        
+        # 檢查超時
+        if time.time() - ocr_start > timeout:
+            return None, None
         
         # 擴展邊界框
         pad = 5
@@ -107,15 +114,16 @@ def ocr_single_fast_strategy(image, bbox):
         else:
             gray = roi
         
-        # 放大圖片 - 2 倍就夠了
-        scale = 2
+        # 放大圖片 - 降到 1.5 倍加快速度
+        scale = 1.5
         gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
         
-        # 去噪
-        denoised = cv2.medianBlur(gray, 3)
+        # OTSU 二值化 - 跳過去噪以加快速度
+        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         
-        # OTSU 二值化
-        _, binary = cv2.threshold(denoised, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        # 檢查超時
+        if time.time() - ocr_start > timeout:
+            return None, None
         
         # OCR - 只允許數字
         text = pytesseract.image_to_string(
@@ -138,7 +146,7 @@ def process_image(image_path):
     """處理圖片並返回 OCR 結果"""
     import time
     start_time = time.time()
-    MAX_PROCESSING_TIME = 30
+    MAX_PROCESSING_TIME = 90  # 延長到 90 秒
     
     try:
         print("Started.")
