@@ -22,11 +22,11 @@ RUN apt-get update && \
 
 # 安裝 Python 依賴
 RUN pip install --upgrade pip && \
-    pip install --no-cache-dir "numpy<2.0" && \
-    pip install --no-cache-dir "opencv-python-headless<4.10" && \
     pip install --no-cache-dir ultralytics && \
+    pip install --no-cache-dir "opencv-python-headless<4.10" && \
     pip install --no-cache-dir pytesseract && \
-    pip install --no-cache-dir runpod
+    pip install --no-cache-dir runpod && \
+    pip install --no-cache-dir --force-reinstall "numpy<2.0"
 
 # 複製應用程式檔案
 COPY . .
