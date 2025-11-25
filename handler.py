@@ -2,6 +2,16 @@
 RunPod Serverless Handler for YOLO Nutrition OCR
 優化版：減少 OCR 執行次數，提升速度
 """
+
+# 先檢查 numpy 是否可用
+try:
+    import numpy as np
+    print(f"✅ Numpy version: {np.__version__}")
+except ImportError as e:
+    print(f"❌ Numpy import failed: {e}")
+    import sys
+    sys.exit(1)
+
 import runpod
 import base64
 import tempfile
@@ -9,7 +19,6 @@ import os
 import json
 from ultralytics import YOLO
 import cv2
-import numpy as np
 import pytesseract
 import re
 
@@ -187,10 +196,17 @@ def handler(event):
                 
     except Exception as e:
         print(f"Handler error: {e}")
+        import traceback
+        traceback.print_exc()
         return {"error": str(e)}
 
 # 預先載入模型
+print("=" * 50)
 print("Initializing handler...")
+print(f"Python version: {sys.version}")
+print(f"Numpy available: {np.__version__}")
+print("=" * 50)
+
 load_model()
 print("Handler ready!")
 
