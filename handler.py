@@ -1,6 +1,6 @@
 """
 RunPod Serverless Handler for YOLO Nutrition OCR
-直接載入模型，不使用 subprocess
+優化版：減少 OCR 執行次數，提升速度
 """
 import runpod
 import base64
@@ -29,9 +29,7 @@ def extract_number(text):
     """從文字中提取數字"""
     if not text:
         return None
-    # 清理文字
     text = text.replace(',', '.').replace('，', '.')
-    # 尋找數字（包含小數）
     matches = re.findall(r'[\d]+\.?[\d]*', text)
     if matches:
         try:
@@ -40,8 +38,8 @@ def extract_number(text):
             return None
     return None
 
-def ocr_with_strategies(image, bbox):
-    """使用多種前處理策略進行 OCR"""
+def ocr_with_single_strategy(image, bbox):
+    """優化後的 OCR：只使用單一策略以提升速度"""
     x1, y1, x2, y2 = map(int, bbox)
     
     # 擴展邊界框
@@ -62,36 +60,28 @@ def ocr_with_strategies(image, bbox):
     else:
         gray = roi
     
-    # 多種前處理策略
-    strategies = {
-        'gray': gray,
-        'otsu': cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
-        'adaptive': cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2),
-    }
+    # 放大圖片有助於辨識小字
+    scale = 2
+    gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
     
-    # 嘗試每種策略
-    results = []
-    for name, processed in strategies.items():
-        try:
-            text = pytesseract.image_to_string(
-                processed, 
-                lang='chi_tra+eng',
-                config='--psm 7'
-            ).strip()
-            value = extract_number(text)
-            if value is not None:
-                results.append((text, value))
-        except:
-            continue
+    # 二值化 - 只用 OTSU，最穩定
+    _, processed = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     
-    # 投票選出最常見的數值
-    if results:
-        values = [r[1] for r in results]
-        # 簡單取中位數
-        values.sort()
-        best_value = values[len(values)//2]
-        best_text = results[0][0]
-        return best_text, best_value
+    try:
+        # 只執行一次 OCR
+        text = pytesseract.image_to_string(
+            processed,
+            lang='chi_tra+eng',
+            config='--psm 7'  # PSM 7 假設是單行文字
+        ).strip()
+        
+        value = extract_number(text)
+        if value is not None:
+            return text, value
+            
+    except Exception as e:
+        print(f"OCR Error: {e}")
+        return None, None
     
     return None, None
 
@@ -105,13 +95,21 @@ def process_image(image_path):
     if image is None:
         return {"error": "無法讀取圖片"}
     
-    # YOLO 推論
-    results = yolo(image, verbose=False)
+    print(f"圖片大小: {image.shape}")
+    
+    # YOLO 推論 - 降低信心度閾值，加快 NMS
+    results = yolo(
+        image,
+        verbose=False,
+        conf=0.25,      # 提高信心度閾值，減少候選框
+        iou=0.7,        # 提高 IOU 閾值，加快 NMS
+        max_det=20      # 最多只偵測 20 個物件
+    )
     
     # 類別名稱對應
     class_names = {
         0: 'serving_size',
-        1: 'servings_per_package', 
+        1: 'servings_per_package',
         2: 'calories',
         3: 'protein',
         4: 'fat',
@@ -129,18 +127,20 @@ def process_image(image_path):
         if result.boxes is None:
             continue
             
+        print(f"偵測到 {len(result.boxes)} 個框框")
+        
         for box in result.boxes:
             cls_id = int(box.cls[0])
             bbox = box.xyxy[0].tolist()
             conf = float(box.conf[0])
             
-            if conf < 0.3:  # 信心度過低則跳過
+            if conf < 0.3:
                 continue
             
             class_name = class_names.get(cls_id, f'unknown_{cls_id}')
             
-            # OCR
-            raw_text, value = ocr_with_strategies(image, bbox)
+            # OCR - 只執行一次
+            raw_text, value = ocr_with_single_strategy(image, bbox)
             
             if value is not None:
                 items.append({
@@ -149,6 +149,9 @@ def process_image(image_path):
                     "raw_text": raw_text or "",
                     "confidence": conf
                 })
+                print(f"  {class_name}: {value} (conf: {conf:.2f})")
+    
+    print(f"成功辨識 {len(items)} 個欄位")
     
     return {
         "success": True,
@@ -183,9 +186,10 @@ def handler(event):
                 os.remove(temp_path)
                 
     except Exception as e:
+        print(f"Handler error: {e}")
         return {"error": str(e)}
 
-# 預先載入模型（冷啟動時）
+# 預先載入模型
 print("Initializing handler...")
 load_model()
 print("Handler ready!")
