@@ -31,17 +31,58 @@ def load_model():
     return model
 
 def extract_number(text):
-    """從文字中提取數字"""
+    """從文字中提取數字，智能處理小數點"""
     if not text:
         return None
-    text = text.replace(',', '.').replace('，', '.')
-    matches = re.findall(r'[\d]+\.?[\d]*', text)
-    if matches:
-        try:
-            return float(matches[0])
-        except:
-            return None
-    return None
+    
+    # 移除常見的干擾字符
+    text = text.replace(',', '.').replace('，', '.').replace(' ', '').strip()
+    
+    # 找出所有數字和小數點
+    matches = re.findall(r'\d+\.?\d*', text)
+    
+    if not matches:
+        return None
+    
+    try:
+        # 取第一個匹配的數字
+        num_str = matches[0]
+        value = float(num_str)
+        
+        # 智能修正：如果數字太大（可能是小數點錯誤）
+        # 例如：29058 → 29.058，44087 → 440.87
+        if value > 1000 and '.' not in num_str:
+            # 嘗試在不同位置插入小數點
+            str_value = str(int(value))
+            
+            # 如果是 5 位數，嘗試 XX.XXX 或 XXX.XX
+            if len(str_value) == 5:
+                # 優先嘗試 XX.XXX (如 29.058)
+                option1 = float(str_value[:2] + '.' + str_value[2:])
+                if option1 < 100:
+                    return option1
+                # 嘗試 XXX.XX (如 290.58)
+                option2 = float(str_value[:3] + '.' + str_value[3:])
+                if option2 < 1000:
+                    return option2
+            
+            # 如果是 4 位數，嘗試 XX.XX
+            elif len(str_value) == 4:
+                # 嘗試 XX.XX (如 52.80)
+                option1 = float(str_value[:2] + '.' + str_value[2:])
+                if option1 < 100:
+                    return option1
+            
+            # 如果是 3 位數，嘗試 X.XX
+            elif len(str_value) == 3:
+                option1 = float(str_value[0] + '.' + str_value[1:])
+                if option1 < 10:
+                    return option1
+        
+        return value
+        
+    except:
+        return None
 
 def ocr_with_multiple_strategies(image, bbox):
     """優化後的 OCR：嘗試多種策略找最佳結果"""
@@ -137,9 +178,9 @@ def process_image(image_path):
         results = yolo(
             image,
             verbose=False,
-            conf=0.25,
+            conf=0.15,  # 從 0.25 降到 0.15，偵測更多候選框
             iou=0.7,
-            max_det=20
+            max_det=30  # 從 20 增加到 30
         )
         
         # 類別名稱對應
@@ -170,7 +211,11 @@ def process_image(image_path):
                 bbox = box.xyxy[0].tolist()
                 conf = float(box.conf[0])
                 
-                if conf < 0.3:
+                class_name = class_names.get(cls_id, f'unknown_{cls_id}')
+                print(f"  Box: {class_name} (conf: {conf:.2f})")
+                
+                if conf < 0.15:  # 從 0.3 降到 0.15
+                    print(f"    Skipped: confidence too low")
                     continue
                 
                 class_name = class_names.get(cls_id, f'unknown_{cls_id}')
@@ -185,7 +230,9 @@ def process_image(image_path):
                         "raw_text": raw_text or "",
                         "confidence": conf
                     })
-                    print(f"  {class_name}: {value} (conf: {conf:.2f})")
+                    print(f"    ✓ {class_name}: {value} (conf: {conf:.2f})")
+                else:
+                    print(f"    ✗ {class_name}: OCR failed (raw_text: '{raw_text}')")
         
         print(f"Successfully recognized {len(items)} fields")
         
