@@ -1,37 +1,35 @@
-# RunPod Serverless Dockerfile for YOLO Nutrition OCR
+# Dockerfile for YOLO + EasyOCR (GPU Accelerated)
 FROM pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime
 
-# 設定非互動模式
-ARG DEBIAN_FRONTEND=noninteractive
-ENV TZ=Asia/Taipei
-
 WORKDIR /app
+
+# 設定時區
+ENV TZ=Asia/Taipei
+ENV DEBIAN_FRONTEND=noninteractive
 
 # 安裝系統依賴
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     tzdata \
-    tesseract-ocr \
-    tesseract-ocr-chi-tra \
-    tesseract-ocr-chi-sim \
-    tesseract-ocr-eng \
     libgl1-mesa-glx \
     libglib2.0-0 \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# 安裝 Python 依賴
-RUN pip install --upgrade pip && \
-    pip install --no-cache-dir ultralytics && \
-    pip install --no-cache-dir pytesseract && \
-    pip install --no-cache-dir runpod && \
-    pip install --no-cache-dir --force-reinstall "numpy<2.0" "opencv-python-headless<4.10"
+# 升級 pip
+RUN pip install --upgrade pip
 
-# 複製應用程式檔案
+# 安裝 Python 套件
+RUN pip install --no-cache-dir ultralytics
+RUN pip install --no-cache-dir easyocr
+RUN pip install --no-cache-dir runpod
+RUN pip install --no-cache-dir --force-reinstall "numpy<2.0" "opencv-python-headless<4.10"
+
+# 預先下載 EasyOCR 模型
+RUN python -c "import easyocr; easyocr.Reader(['ch_tra', 'ch_sim', 'en'], gpu=False)"
+
+# 複製應用程式
 COPY . .
 
-# 設定環境變數
-ENV PYTHONUNBUFFERED=1
-
-# RunPod Serverless 入口點
+# 設定入口點
 CMD ["python", "-u", "handler.py"]
